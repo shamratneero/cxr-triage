@@ -1,0 +1,22 @@
+data:
+  root: "F:/X ray dataset/Second Version"
+  csv_path: "Data_Entry_2017.csv"
+  image_size: 224
+  batch_size: 16
+  num_workers: 5
+  train_val_split: 0.8
+
+model:
+  backbone: "densenet121"
+  pretrained: true
+  num_classes: 14
+
+training:
+  epochs: 30
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  use_amp: true
+
+mlflow:
+  experiment_name: "cxr-triage"
+  run_name: "densenet121-baseline"
