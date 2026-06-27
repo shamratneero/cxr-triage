@@ -7,7 +7,13 @@ from torch.utils.data import Dataset
 
 class ChestXrayDataset(Dataset):
     def __init__(self, csv_path, image_root, transform=None):
-        self.df = pd.read_csv(csv_path)
+
+
+        
+        if csv_path is not None:
+            self.df = pd.read_csv(csv_path)
+        else:
+            self.df = None
         self.image_root = image_root
         self.transform = transform
         self.labels = [
