@@ -7,7 +7,8 @@ class DenseNetModel(nn.Module):
         super(DenseNetModel, self).__init__()
         
         # Load pretrained DenseNet-121
-        self.model = models.densenet121(pretrained=pretrained)
+        self.model = models.densenet121(
+    weights='IMAGENET1K_V1' if pretrained else None)
         
         # Replace final classifier
         in_features = self.model.classifier.in_features
