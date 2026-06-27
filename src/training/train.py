@@ -2,6 +2,11 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.amp import GradScaler, autocast
+from rich.console import Console
+from rich.table import Table
+from rich import print as rprint
+
+console = Console()
 import mlflow
 import numpy as np
 from sklearn.metrics import roc_auc_score
@@ -82,7 +87,7 @@ def train(model, train_loader, val_loader, optimizer,
     patience = 5
     epochs_no_improve = 0
     
-    with mlflow.start_run():
+    with mlflow.start_run(run_name="focal-loss"):
         for epoch in range(num_epochs):
             print(f"\nEpoch {epoch+1}/{num_epochs}")
             
@@ -112,9 +117,17 @@ def train(model, train_loader, val_loader, optimizer,
                 mlflow.log_metric(f'auc_{label}', 
                                  auc, step=epoch)
             
-            print(f"Train Loss: {train_loss:.4f}")
-            print(f"Val Loss: {val_loss:.4f}")
-            print(f"Mean AUC: {mean_auc:.4f}")
+            table = Table(title=f"Epoch {epoch+1}/{num_epochs} Results")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+            table.add_row("Train Loss", f"{train_loss:.4f}")
+            table.add_row("Val Loss", f"{val_loss:.4f}")
+            table.add_row("Mean AUC", f"{mean_auc:.4f}")
+            table.add_row("Best AUC", f"{best_auc:.4f}")
+            table.add_section()
+            for label, auc in zip(labels, auc_scores):
+                table.add_row(f"AUC {label}", f"{auc:.4f}")
+            console.print(table)
             
             # Save best model
             if mean_auc > best_auc:
