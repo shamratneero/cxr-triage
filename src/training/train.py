@@ -30,11 +30,28 @@ def train_one_epoch(model, loader, optimizer,
             predictions = model(images)
             loss = criterion(predictions, labels)
         
+        #scaler.scale(loss).backward()
+        #scaler.step(optimizer)
+
+        #ixing orconnext
+
         scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         scaler.step(optimizer)
+
+
+
+
+
+
         scaler.update()
         
-        total_loss += loss.item()
+        #total_loss += loss.item()
+
+        loss_val = loss.item()
+        if not torch.isnan(loss).any():
+            total_loss += loss_val
         
         if batch_idx % 100 == 0:
             print(f"Batch {batch_idx}, Loss: {loss.item():.4f}")
@@ -87,7 +104,7 @@ def train(model, train_loader, val_loader, optimizer,
     patience = 5
     epochs_no_improve = 0
     
-    with mlflow.start_run(run_name="focal-loss"):
+    with mlflow.start_run(run_name="convnext-baseline"):
         for epoch in range(num_epochs):
             print(f"\nEpoch {epoch+1}/{num_epochs}")
             

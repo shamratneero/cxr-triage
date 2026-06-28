@@ -10,8 +10,12 @@ from torch.utils.data import DataLoader
 from src.data.dataset import ChestXrayDataset
 from src.data.transforms import get_train_transforms, get_val_transforms
 from src.models.densenet import DenseNetModel
+from src.models.convnext import ConvNeXtModel
 from src.training.losses import WeightedBCELoss, get_pos_weights
 from src.training.train import train
+
+
+
 
 if __name__ == '__main__':
     try:
@@ -25,7 +29,7 @@ if __name__ == '__main__':
         IMAGE_ROOT = "F:/X ray dataset/Second Version"
         BATCH_SIZE = 16
         NUM_EPOCHS = 30
-        LEARNING_RATE = 0.001
+        LEARNING_RATE = 0.0001
         DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         print(f"Using device: {DEVICE}")
@@ -65,13 +69,15 @@ if __name__ == '__main__':
         )
         print("DataLoaders created")
 
-        model = DenseNetModel(num_classes=14, pretrained=True).to(DEVICE)
+        #model = DenseNetModel(num_classes=14, pretrained=True).to(DEVICE)
+        model = ConvNeXtModel(num_classes=14, pretrained=True).to(DEVICE)
         print("Model loaded")
 
         pos_weights = get_pos_weights(train_df, LABELS, DEVICE)
         #criterion = WeightedBCELoss(pos_weights)
         from src.training.losses import FocalLoss
-        criterion = FocalLoss(gamma=2.0, pos_weights=pos_weights)
+        #criterion = WeightedBCELoss(pos_weights)
+        criterion = FocalLoss(gamma=1.0, pos_weights=pos_weights)
 
         optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -90,7 +96,8 @@ if __name__ == '__main__':
             labels=LABELS,
             num_epochs=NUM_EPOCHS,
             #save_dir='D:/cxr-triage/checkpoints'
-            save_dir='D:/cxr-triage/checkpoints/focal_loss'
+            #save_dir='D:/cxr-triage/checkpoints/focal_loss'
+            save_dir='D:/cxr-triage/checkpoints/convnext'
         )
 
         print(f"\nTraining complete. Best AUC: {best_auc:.4f}")
