@@ -106,7 +106,7 @@ def train(model, train_loader, val_loader, optimizer,
     patience = 5
     epochs_no_improve = 0
     
-    with mlflow.start_run(run_name="densenet-clahe-320"):
+    with mlflow.start_run(run_name="densenet-bce-fixed"):
         for epoch in range(num_epochs):
             print(f"\nEpoch {epoch+1}/{num_epochs}")
             

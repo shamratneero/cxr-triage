@@ -1,0 +1,25 @@
+{
+  "global_temperature": 1.2142043113708496,
+  "per_class_temperatures": {
+    "Atelectasis": 1.5024433135986328,
+    "Consolidation": 1.6514005661010742,
+    "Infiltration": 1.8459680080413818,
+    "Pneumothorax": 1.4758273363113403,
+    "Edema": 1.1193790435791016,
+    "Emphysema": 1.4505436420440674,
+    "Fibrosis": 1.4036922454833984,
+    "Effusion": 1.476876139640808,
+    "Pneumonia": 1.4722470045089722,
+    "Pleural_Thickening": 1.1789478063583374,
+    "Cardiomegaly": 1.046138882637024,
+    "Nodule": 1.7909291982650757,
+    "Mass": 1.7553989887237549,
+    "Hernia": 1.443650722503662
+  },
+  "ece": {
+    "no_calibration": 0.40745416630408865,
+    "global_temperature": 0.4069116195497933,
+    "per_class_temperature": 0.40129882437903774
+  },
+  "conclusion": "Limited ECE improvement due to aggressive pos_weight during training inducing broad probability distributions. AUC unaffected. Per-class temperature saved for inference use."
+}
