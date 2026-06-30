@@ -1,0 +1,12 @@
+Model: DenseNet121 (ImageNet pretrained)
+Dataset: NIH ChestX-ray14
+Image Size: 320×320
+Batch Size: 8
+Epochs: 30
+Optimizer: Adam
+Learning Rate: 0.001
+Loss: Focal Loss (gamma=2.0 + pos_weights)
+Scheduler: CosineAnnealingLR
+Mixed Precision: Yes (AMP)
+Best Mean AUC: 0.7943
+Early Stopping: Epoch 20

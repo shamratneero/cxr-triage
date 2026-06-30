@@ -68,13 +68,15 @@ def validate(model, loader, criterion, device, labels):
         for images, targets in tqdm(loader, desc="Validating"):
             images = images.to(device)
             targets = targets.to(device)
-            
+
             with autocast('cuda'):
-                predictions = model(images)
-                loss = criterion(predictions, targets)
-            
+                logits = model(images)
+                loss = criterion(logits, targets)
+
+            probs = torch.sigmoid(logits)
+
             total_loss += loss.item()
-            all_predictions.append(predictions.cpu().numpy())
+            all_predictions.append(probs.cpu().numpy())
             all_targets.append(targets.cpu().numpy())
     
     all_predictions = np.concatenate(all_predictions, axis=0)
@@ -145,6 +147,8 @@ def train(model, train_loader, val_loader, optimizer,
             for label, auc in zip(labels, auc_scores):
                 table.add_row(f"AUC {label}", f"{auc:.4f}")
             console.print(table)
+
+            
             
             # Save best model
             if mean_auc > best_auc:

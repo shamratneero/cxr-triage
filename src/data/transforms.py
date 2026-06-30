@@ -56,3 +56,7 @@ def get_val_transforms(image_size=320):
             std=[0.229, 0.224, 0.225]
         )
     ])
+
+
+get_train_transforms()
+get_val_transforms()

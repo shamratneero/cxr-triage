@@ -98,7 +98,8 @@ if __name__ == '__main__':
             #save_dir='D:/cxr-triage/checkpoints'
             #save_dir='D:/cxr-triage/checkpoints/focal_loss'
             ##save_dir='D:/cxr-triage/checkpoints/convnext'
-            save_dir='D:/cxr-triage/checkpoints/clahe_320'
+            #save_dir='D:/cxr-triage/checkpoints/clahe_320'
+            save_dir='D:/cxr-triage/checkpoints/clahe_320_logits_fix'
         )
 
         print(f"\nTraining complete. Best AUC: {best_auc:.4f}")
