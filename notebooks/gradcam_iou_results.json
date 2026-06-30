@@ -1,0 +1,56 @@
+{
+  "Atelectasis": {
+    "count": 180,
+    "mean_iou": 0.012114024120819009,
+    "accuracy_iou_01": 0.05,
+    "accuracy_iou_025": 0.005555555555555556
+  },
+  "Effusion": {
+    "count": 153,
+    "mean_iou": 0.006219191650562989,
+    "accuracy_iou_01": 0.013071895424836602,
+    "accuracy_iou_025": 0.0
+  },
+  "Cardiomegaly": {
+    "count": 146,
+    "mean_iou": 0.24758266835959042,
+    "accuracy_iou_01": 0.5273972602739726,
+    "accuracy_iou_025": 0.4383561643835616
+  },
+  "Infiltrate": {
+    "count": 123,
+    "mean_iou": 0.010990711389272382,
+    "accuracy_iou_01": 0.04878048780487805,
+    "accuracy_iou_025": 0.0
+  },
+  "Pneumonia": {
+    "count": 120,
+    "mean_iou": 0.023114750451976925,
+    "accuracy_iou_01": 0.09166666666666666,
+    "accuracy_iou_025": 0.016666666666666666
+  },
+  "Pneumothorax": {
+    "count": 98,
+    "mean_iou": 0.013960136030577207,
+    "accuracy_iou_01": 0.04081632653061224,
+    "accuracy_iou_025": 0.02040816326530612
+  },
+  "Mass": {
+    "count": 85,
+    "mean_iou": 0.021666269159396602,
+    "accuracy_iou_01": 0.09411764705882353,
+    "accuracy_iou_025": 0.011764705882352941
+  },
+  "Nodule": {
+    "count": 79,
+    "mean_iou": 0.011615853237985363,
+    "accuracy_iou_01": 0.02531645569620253,
+    "accuracy_iou_025": 0.0
+  },
+  "overall": {
+    "count": 984,
+    "mean_iou": 0.048305016682162215,
+    "accuracy_iou_01": 0.1209349593495935,
+    "accuracy_iou_025": 0.07113821138211382
+  }
+}
