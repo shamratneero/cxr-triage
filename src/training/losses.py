@@ -29,7 +29,11 @@ class FocalLoss(nn.Module):
             pos_weight=self.pos_weights,
             reduction='none'
         )
-        pt = torch.exp(-bce_loss)
+        # pt must come from sigmoid, not exp(-bce_loss), because pos_weight
+        # inflates bce_loss for positives which makes exp(-bce) ≈ sigmoid^w
+        # rather than sigmoid, breaking the focal modulation entirely.
+        probs = torch.sigmoid(predictions)
+        pt = targets * probs + (1 - targets) * (1 - probs)
         focal_loss = ((1 - pt) ** self.gamma) * bce_loss
         return focal_loss.mean()
 
@@ -37,7 +41,7 @@ class FocalLoss(nn.Module):
 def get_pos_weights(train_df, labels, device):
     pos_weights = []
     for label in labels:
-        pos = (train_df['Finding Labels'].str.contains(label)).sum()
+        pos = (train_df['Finding Labels'].str.contains(label, regex=False)).sum()
         neg = len(train_df) - pos
         pos_weights.append(neg / pos)
     return torch.tensor(pos_weights, dtype=torch.float32).to(device)

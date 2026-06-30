@@ -73,7 +73,7 @@ def validate(model, loader, criterion, device, labels):
                 logits = model(images)
                 loss = criterion(logits, targets)
 
-            probs = torch.sigmoid(logits)
+            probs = torch.sigmoid(logits.float())
 
             total_loss += loss.item()
             all_predictions.append(probs.cpu().numpy())
