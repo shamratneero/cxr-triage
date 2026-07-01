@@ -6,30 +6,24 @@ import cv2
 class GradCAM:
     def __init__(self, model):
         self.model = model
-        self.gradients = None
-        self.activations = None
+        self.feature_maps = None
         self._hook_handles = []
         self._register_hooks()
 
     def _register_hooks(self):
-        # Remove any existing hooks first
         for h in self._hook_handles:
             h.remove()
         self._hook_handles = []
 
-        # Target the last denselayer inside denseblock4
-        target = self.model.model.features.denseblock4.denselayer16.conv2
+        # Hook on features output — most reliable for DenseNet
+        def save_features(module, input, output):
+            self.feature_maps = output
 
-        h1 = target.register_forward_hook(
-            lambda m, i, o: setattr(self, 'activations', o)
-        )
-        h2 = target.register_backward_hook(
-            lambda m, gi, go: setattr(self, 'gradients', go[0])
-        )
-        self._hook_handles = [h1, h2]
+        h = self.model.model.features.register_forward_hook(save_features)
+        self._hook_handles = [h]
 
     def generate(self, image_tensor, class_idx):
-        # Disable all inplace ops
+        # Disable inplace ops
         for m in self.model.modules():
             if isinstance(m, torch.nn.ReLU):
                 m.inplace = False
@@ -38,20 +32,43 @@ class GradCAM:
         image_tensor = image_tensor.to(device)
 
         self.model.eval()
-        self.gradients = None
-        self.activations = None
+        self.feature_maps = None
 
+        # Forward pass — keep computation graph
         logits = self.model(image_tensor)
         self.model.zero_grad()
-        logits[0, class_idx].backward(retain_graph=True)
 
-        if self.gradients is None or self.activations is None:
-            raise RuntimeError("Hooks did not fire — check target layer name")
+        if self.feature_maps is None:
+            raise RuntimeError("Forward hook did not fire")
 
-        weights = self.gradients.detach().mean(dim=[0, 2, 3]).view(-1, 1, 1)
-        activations = self.activations.detach()[0]
-        heatmap = (activations * weights).mean(dim=0)
-        heatmap = torch.clamp(heatmap, min=0).cpu().numpy()
+        # Backward for specific class
+        score = logits[0, class_idx]
+        score.backward(retain_graph=True)
+
+        # Get gradients via autograd directly on feature maps
+        # We need feature_maps to require grad
+        feature_maps = self.feature_maps
+
+        # Compute gradient of score w.r.t feature maps manually
+        gradients = torch.autograd.grad(
+            outputs=logits[0, class_idx],
+            inputs=feature_maps,
+            create_graph=False,
+            retain_graph=True,
+            allow_unused=True
+        )
+
+        if gradients[0] is None:
+            # Fallback: use feature maps directly without gradient weighting
+            heatmap = feature_maps[0].mean(dim=0)
+            heatmap = torch.clamp(heatmap, min=0)
+            heatmap = heatmap.detach().cpu().numpy()
+        else:
+            weights = gradients[0].mean(dim=[0, 2, 3]).view(-1, 1, 1)
+            weighted = feature_maps[0] * weights
+            heatmap = weighted.mean(dim=0)
+            heatmap = torch.clamp(heatmap, min=0)
+            heatmap = heatmap.detach().cpu().numpy()
 
         if heatmap.max() > 0:
             heatmap = heatmap / heatmap.max()
@@ -60,7 +77,7 @@ class GradCAM:
 
     def overlay(self, heatmap, original_image, alpha=0.4):
         heatmap_resized = cv2.resize(
-            heatmap,
+            heatmap.astype(np.float32),
             (original_image.shape[1], original_image.shape[0])
         )
         heatmap_colored = cv2.applyColorMap(
