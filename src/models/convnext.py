@@ -5,17 +5,15 @@ from torchvision import models
 class ConvNeXtModel(nn.Module):
     def __init__(self, num_classes=14, pretrained=True):
         super(ConvNeXtModel, self).__init__()
-        
+
         self.model = models.convnext_tiny(
             weights='IMAGENET1K_V1' if pretrained else None
         )
-        
-        # Replace final classifier
+
+        # Replace final classifier — output raw logits, not probabilities.
+        # Sigmoid is applied downstream (loss function, inference) as needed.
         in_features = self.model.classifier[2].in_features
-        self.model.classifier[2] = nn.Sequential(
-            nn.Linear(in_features, num_classes),
-            nn.Sigmoid()
-        )
-    
+        self.model.classifier[2] = nn.Linear(in_features, num_classes)
+
     def forward(self, x):
         return self.model(x)

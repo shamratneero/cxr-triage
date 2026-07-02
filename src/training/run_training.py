@@ -12,6 +12,7 @@ from src.data.transforms import get_train_transforms, get_val_transforms
 from src.models.densenet import DenseNetModel
 from src.training.losses import WeightedBCELoss, get_pos_weights
 from src.training.losses import WeightedBCELoss, FocalLoss, get_pos_weights
+from src.models.convnext import ConvNeXtModel
 from src.training.train import train
 
 if __name__ == '__main__':
@@ -66,8 +67,11 @@ if __name__ == '__main__':
         )
         print("DataLoaders created")
 
-        model = DenseNetModel(num_classes=14, pretrained=True).to(DEVICE)
-        print("Model loaded: DenseNet-121 (corrected, no sigmoid)")
+        #model = DenseNetModel(num_classes=14, pretrained=True).to(DEVICE)
+        #print("Model loaded: DenseNet-121 (corrected, no sigmoid)")
+
+        model = ConvNeXtModel(num_classes=14, pretrained=True).to(DEVICE)
+        print("Model loaded: ConvNeXt-Tiny (corrected, no sigmoid)")
 
         pos_weights = get_pos_weights(train_df, LABELS, DEVICE)
         #criterion = WeightedBCELoss(pos_weights)
@@ -90,7 +94,7 @@ if __name__ == '__main__':
             device=DEVICE,
             labels=LABELS,
             num_epochs=NUM_EPOCHS,
-            save_dir='D:/cxr-triage/checkpoints/densenet_focal_fixed'
+            save_dir='D:/cxr-triage/checkpoints/convv_focal_fixed'
             
         )
 

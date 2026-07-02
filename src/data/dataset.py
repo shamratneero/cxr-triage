@@ -54,9 +54,10 @@ class ChestXrayDataset(Dataset):
             
             # Build label vector
             label_vector = np.zeros(14, dtype=np.float32)
-            finding = row['Finding Labels']
+            finding_list = row['Finding Labels'].split('|')
             for i, label in enumerate(self.labels):
-                if label in finding:
+                if label in finding_list:
                     label_vector[i] = 1.0
-                    
+
+
             return image, label_vector
