@@ -1,0 +1,139 @@
+{
+  "model": "ConvNeXt-Tiny + Focal Loss (fixed pipeline)",
+  "checkpoint": "D:/cxr-triage/checkpoints/convnext_focal_fixed/best_model.pth",
+  "checkpoint_epoch": 3,
+  "mean_test_auc": 0.8085571305092871,
+  "critical_test_auc": 0.8225233760227599,
+  "micro_f1": 0.39323499491353003,
+  "macro_f1": 0.3222397933750592,
+  "thresholds": {
+    "Atelectasis": 0.5431662201881409,
+    "Consolidation": 0.5327290296554565,
+    "Infiltration": 0.5081703662872314,
+    "Pneumothorax": 0.48090529441833496,
+    "Edema": 0.5265862345695496,
+    "Emphysema": 0.5120368599891663,
+    "Fibrosis": 0.6312534213066101,
+    "Effusion": 0.5910152792930603,
+    "Pneumonia": 0.3903596103191376,
+    "Pleural_Thickening": 0.5807088017463684,
+    "Cardiomegaly": 0.49053308367729187,
+    "Nodule": 0.5591697096824646,
+    "Mass": 0.6369178295135498,
+    "Hernia": 0.49134913086891174
+  },
+  "per_class": {
+    "Atelectasis": {
+      "auc": 0.7756004811482686,
+      "f1": 0.39738185045484803,
+      "precision": 0.31229293809938974,
+      "recall": 0.546203110704483,
+      "support": 3279,
+      "tier": "Urgent"
+    },
+    "Consolidation": {
+      "auc": 0.7446946268075435,
+      "f1": 0.23666820347318274,
+      "precision": 0.16410912190963342,
+      "recall": 0.42424242424242425,
+      "support": 1815,
+      "tier": "Urgent"
+    },
+    "Infiltration": {
+      "auc": 0.7064949410430467,
+      "f1": 0.4754593377347868,
+      "precision": 0.3459447382140463,
+      "recall": 0.7599803664921466,
+      "support": 6112,
+      "tier": "Urgent"
+    },
+    "Pneumothorax": {
+      "auc": 0.8606261643237895,
+      "f1": 0.4518413597733711,
+      "precision": 0.32960220423626657,
+      "recall": 0.7181988742964353,
+      "support": 2665,
+      "tier": "Critical"
+    },
+    "Edema": {
+      "auc": 0.8308351089527369,
+      "f1": 0.22402471996910003,
+      "precision": 0.17427884615384615,
+      "recall": 0.31351351351351353,
+      "support": 925,
+      "tier": "Critical"
+    },
+    "Emphysema": {
+      "auc": 0.8940068544363688,
+      "f1": 0.38245412844036697,
+      "precision": 0.27849686847599164,
+      "recall": 0.6102470265324794,
+      "support": 1093,
+      "tier": "Routine"
+    },
+    "Fibrosis": {
+      "auc": 0.8297863825926549,
+      "f1": 0.1274658573596358,
+      "precision": 0.1875,
+      "recall": 0.09655172413793103,
+      "support": 435,
+      "tier": "Routine"
+    },
+    "Effusion": {
+      "auc": 0.8221229509880958,
+      "f1": 0.5232385120350109,
+      "precision": 0.4417023791931432,
+      "recall": 0.641691713181623,
+      "support": 4658,
+      "tier": "Urgent"
+    },
+    "Pneumonia": {
+      "auc": 0.7155353148763955,
+      "f1": 0.09598902982516284,
+      "precision": 0.05927180355630821,
+      "recall": 0.25225225225225223,
+      "support": 555,
+      "tier": "Critical"
+    },
+    "Pleural_Thickening": {
+      "auc": 0.7820397256092795,
+      "f1": 0.21927409261576972,
+      "precision": 0.1535764375876578,
+      "recall": 0.38320209973753283,
+      "support": 1143,
+      "tier": "Routine"
+    },
+    "Cardiomegaly": {
+      "auc": 0.8930708575948242,
+      "f1": 0.4073285044737963,
+      "precision": 0.37402190923317685,
+      "recall": 0.4471468662301216,
+      "support": 1069,
+      "tier": "Urgent"
+    },
+    "Nodule": {
+      "auc": 0.7617350583279675,
+      "f1": 0.2934449093444909,
+      "precision": 0.26809378185524974,
+      "recall": 0.32409118915588414,
+      "support": 1623,
+      "tier": "Urgent"
+    },
+    "Mass": {
+      "auc": 0.8201544444909292,
+      "f1": 0.3785409877162196,
+      "precision": 0.33690316822846944,
+      "recall": 0.4319221967963387,
+      "support": 1748,
+      "tier": "Urgent"
+    },
+    "Hernia": {
+      "auc": 0.8830969159381181,
+      "f1": 0.2982456140350877,
+      "precision": 0.6071428571428571,
+      "recall": 0.19767441860465115,
+      "support": 86,
+      "tier": "Critical"
+    }
+  }
+}

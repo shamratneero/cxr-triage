@@ -26,9 +26,8 @@ def train_one_epoch(model, loader, optimizer,
         
         optimizer.zero_grad()
         
-        with autocast('cuda'):
-            predictions = model(images)
-            loss = criterion(predictions, labels)
+        predictions = model(images)
+        loss = criterion(predictions, labels)
         
         #scaler.scale(loss).backward()
         #scaler.step(optimizer)

@@ -38,10 +38,11 @@ class FocalLoss(nn.Module):
         return focal_loss.mean()
 
 
-def get_pos_weights(train_df, labels, device):
+def get_pos_weights(train_df, labels, device, max_weight=10.0):
     pos_weights = []
     for label in labels:
         pos = (train_df['Finding Labels'].str.contains(label, regex=False)).sum()
         neg = len(train_df) - pos
-        pos_weights.append(neg / pos)
+        weight = min(neg / pos, max_weight)
+        pos_weights.append(weight)
     return torch.tensor(pos_weights, dtype=torch.float32).to(device)
