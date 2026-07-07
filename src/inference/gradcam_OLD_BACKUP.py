@@ -3,44 +3,11 @@ import numpy as np
 import cv2
 
 
-def _get_target_layer(model):
-    """
-    Auto-detects the right GradCAM target layer based on backbone architecture.
-    - DenseNet (torchvision): features.norm5 (final batch norm before classifier)
-    - ConvNeXt (torchvision): features[-1] (last stage block, final spatial feature map)
-    Raises a clear error instead of silently picking something wrong if the
-    architecture isn't recognized.
-    """
-    inner = model.model  # the wrapped torchvision model (see DenseNetModel/ConvNeXtModel)
-
-    if not hasattr(inner, 'features'):
-        raise AttributeError(
-            f"Could not find a 'features' attribute on {type(inner).__name__}. "
-            "Pass target_layer explicitly to GradCAM(model, target_layer=...)."
-        )
-
-    features = inner.features
-
-    # DenseNet-style: features is a Sequential ending in a named norm5 layer
-    if hasattr(features, 'norm5'):
-        return features.norm5
-
-    # ConvNeXt-style: features is a Sequential of stage blocks, last one is the target
-    if hasattr(features, '__getitem__'):
-        return features[-1]
-
-    raise AttributeError(
-        f"Unrecognized backbone structure on {type(inner).__name__}; "
-        "pass target_layer explicitly to GradCAM(model, target_layer=...)."
-    )
-
-
 class GradCAM:
-    def __init__(self, model, target_layer=None):
+    def __init__(self, model):
         self.model = model
         self.activations = None
         self._hook_handles = []
-        self._target_layer = target_layer  # optional explicit override
         self._register_hooks()
 
     def _register_hooks(self):
@@ -48,14 +15,10 @@ class GradCAM:
             h.remove()
         self._hook_handles = []
 
-        target = self._target_layer if self._target_layer is not None else _get_target_layer(self.model)
+        target = self.model.model.features.norm5
 
         def forward_hook(module, input, output):
             self.activations = output
-            # Guard: this hook fires on every forward pass through the model,
-            # including ones run inside torch.no_grad() (e.g. a plain confidence
-            # check elsewhere in the calling code). retain_grad() only works on
-            # tensors that require grad, so skip it when it wouldn't apply.
             if self.activations.requires_grad:
                 self.activations.retain_grad()
 
@@ -122,11 +85,10 @@ class GradCAMPlusPlus:
     simple global average — more robust to weak/saturated/mixed-sign
     gradients than vanilla Grad-CAM.
     """
-    def __init__(self, model, target_layer=None):
+    def __init__(self, model):
         self.model = model
         self.activations = None
         self._hook_handles = []
-        self._target_layer = target_layer
         self._register_hooks()
 
     def _register_hooks(self):
@@ -134,7 +96,7 @@ class GradCAMPlusPlus:
             h.remove()
         self._hook_handles = []
 
-        target = self._target_layer if self._target_layer is not None else _get_target_layer(self.model)
+        target = self.model.model.features.norm5
 
         def forward_hook(module, input, output):
             self.activations = output
@@ -212,15 +174,16 @@ class GradCAMPlusPlus:
             h.remove()
 
 
+
+
+
+
+
 class GradCAMPlusPlusDenseLayer16:
     """
     GradCAM++ targeted at denselayer16.conv2 — testing whether GradCAM++'s
     math alone resolves the gradient saturation problem, independent of
     layer choice (norm5).
-
-    NOTE: DenseNet-specific by design (targets a named DenseNet dense layer).
-    Do not use this class with ConvNeXt or other architectures — use
-    GradCAMPlusPlus (auto-detecting) instead.
     """
     def __init__(self, model):
         self.model = model
@@ -290,6 +253,119 @@ class GradCAMPlusPlusDenseLayer16:
         return heatmap
 
     def overlay(self, heatmap, original_image, alpha=0.4):
+        heatmap_resized = cv2.resize(
+            heatmap.astype(np.float32),
+            (original_image.shape[1], original_image.shape[0])
+        )
+        heatmap_colored = cv2.applyColorMap(
+            np.uint8(255 * heatmap_resized),
+            cv2.COLORMAP_JET
+        )
+        heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
+        overlay = (
+            alpha * heatmap_colored + (1 - alpha) * original_image
+        ).astype(np.uint8)
+        return overlay, heatmap_resized
+
+    def remove_hooks(self):
+        for h in self._hook_handles:
+            h.remove()
+
+
+class ClassActivationMap:
+    """
+    Direct Class Activation Map — Zhou et al., CVPR 2016.
+    Replicates the exact methodology used by Wang et al. 2017 (ChestX-ray14).
+
+    Requirements:
+        - The model must use Global Average Pooling (GAP) before a single
+          Linear classifier. DenseNet-121 (torchvision) satisfies this:
+              features → F.relu → AdaptiveAvgPool2d(1,1) → flatten → Linear
+
+    Why this beats Grad-CAM for IoU evaluation:
+        - Grad-CAM approximates channel weights via global gradient averages,
+          which can be corrupted by BatchNorm in eval mode (near-zero gradients).
+        - CAM reads the exact Linear layer weights directly — no backward pass,
+          no gradient flow, no approximation. The result is sharper and more
+          consistent with the model's actual decision boundary.
+        - Wang et al. 2017 used CAM and reported scores this class aims to match
+          or exceed (Cardiomegaly 0.938, Effusion 0.660, Mass 0.400 at IoU>0.1).
+
+    Usage:
+        cam = ClassActivationMap(model)
+        heatmap = cam.generate(image_tensor, class_idx=0)
+        overlay, _ = cam.overlay(heatmap, original_image_np)
+    """
+
+    def __init__(self, model):
+        self.model = model
+        self._feature_map = None
+        self._hook_handles = []
+        self._register_hooks()
+
+    def _register_hooks(self):
+        for h in self._hook_handles:
+            h.remove()
+        self._hook_handles = []
+
+        # Hook the final feature layer (norm5 output) — same as GradCAM.
+        # We capture the spatial feature map BEFORE global average pooling
+        # so we can reconstruct the full spatial CAM.
+        target = self.model.model.features.norm5
+
+        def forward_hook(module, input, output):
+            # output shape: [B, C, H, W]
+            # Apply the same F.relu that DenseNet's forward() applies after
+            # features(x), so the feature map values match what GAP sees.
+            self._feature_map = torch.relu(output)
+
+        h = target.register_forward_hook(forward_hook)
+        self._hook_handles = [h]
+
+    def generate(self, image_tensor, class_idx):
+        """
+        Generate a CAM heatmap for the given class.
+
+        Args:
+            image_tensor: [1, C, H, W] input tensor (unnormalised or normalised).
+            class_idx:    integer index into the 14-class output.
+
+        Returns:
+            heatmap: 2-D numpy array in [0, 1], same spatial size as norm5 output.
+        """
+        device = next(self.model.parameters()).device
+        image_tensor = image_tensor.clone().to(device)
+
+        self.model.eval()
+        self._feature_map = None
+
+        with torch.no_grad():
+            _ = self.model(image_tensor)
+
+        if self._feature_map is None:
+            raise RuntimeError("Forward hook did not capture feature map.")
+
+        # Classifier weights for this class — shape [num_channels]
+        # model.model.classifier is nn.Linear(in_features, num_classes)
+        weights = self.model.model.classifier.weight[class_idx]  # [C]
+
+        # Feature map — shape [B, C, H, W]; take batch index 0 → [C, H, W]
+        fmap = self._feature_map[0]  # [C, H, W]
+
+        # Weighted sum: CAM = sum_c( w_c * A_c )  → [H, W]
+        cam = (weights.view(-1, 1, 1) * fmap).sum(dim=0)
+
+        # ReLU: only keep positive contributions (same as in Grad-CAM)
+        cam = torch.clamp(cam, min=0).detach().cpu().numpy()
+
+        # Normalise to [0, 1]
+        if cam.max() > 0:
+            cam = cam / cam.max()
+
+        return cam
+
+    def overlay(self, heatmap, original_image, alpha=0.4):
+        """Identical interface to GradCAM.overlay — drop-in replacement."""
         heatmap_resized = cv2.resize(
             heatmap.astype(np.float32),
             (original_image.shape[1], original_image.shape[0])
