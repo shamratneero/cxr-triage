@@ -7,21 +7,29 @@ better calibration than all DenseNet variants. See paper_materials.md for
 full justification.
 
 DESIGN DECISIONS (stated explicitly so they're easy to revisit):
-  1. Confidence scores use TEMPERATURE-SCALED probabilities (T=0.5472),
-     not raw model output — raw ConvNeXt probabilities are underconfident
-     (a known Focal-loss effect), so using them uncalibrated would cause
-     the triage logic to under-flag real positive cases.
+  1. Confidence scores are CALIBRATED, not raw model output — raw ConvNeXt
+     probabilities are underconfident (a known Focal-loss effect). Two
+     calibration methods are available (see CALIBRATION_METHOD below):
+       - 'global_temperature': one scalar T=0.5472 for all 14 classes.
+         Simple, well-tested, currently in production.
+       - 'per_class_isotonic': a separate non-parametric correction curve
+         per class. Reduces ECE from ~0.20 to ~0.01 (see compare_calibration_
+         methods.py results) — a large improvement — but is a newer,
+         less-tested path. Kept as an OPT-IN alternative, not the default,
+         so there's an easy one-line fallback if anything looks off.
   2. Thresholds are PER-CLASS, not one global cutoff — fit by maximizing
-     F1 score on the validation set (reuses the cached logits from
-     calibration_analysis.py, no GPU needed). A single global threshold
-     (e.g. 0.5) ignores that classes have very different base rates and
-     confidence distributions (see PER_CLASS_CONFIDENCE tables in
-     paper_materials.md).
+     F1 score on the validation set. Automatically refit using whichever
+     CALIBRATION_METHOD is active (see fit_per_class_thresholds), and saved
+     to a METHOD-SPECIFIC file, so switching methods never mixes up
+     thresholds tuned for the other method's probability scale.
   3. Case-level urgency combines TWO signals: (a) whether the model flags
      a finding above its threshold, AND (b) the clinical acuity of that
-     specific finding. A high-confidence Hernia detection is not the same
-     clinical priority as a lower-confidence Pneumothorax detection — a
-     pure probability-only system would miss this distinction.
+     specific finding.
+
+TO SWITCH CALIBRATION METHOD: change CALIBRATION_METHOD below, then re-run
+this file directly (`python triage_logic.py`) once to refit thresholds for
+the new method. That's the only step — everything downstream (API, UI)
+calls triage_case() and automatically uses whatever is currently configured.
 
 IMPORTANT — CLINICAL_URGENCY below is a DRAFT clinical judgment, not a
 validated one. It MUST be reviewed and corrected by the radiologists in
@@ -32,10 +40,11 @@ Flag this explicitly to them as one of the things you want their feedback on.
 import numpy as np
 import json
 import os
+import pickle
 from sklearn.metrics import f1_score
+from sklearn.isotonic import IsotonicRegression
 
 CACHE_DIR = "D:/cxr-triage/reports/calibration"
-THRESHOLDS_PATH = "D:/cxr-triage/reports/calibration/per_class_thresholds.json"
 
 LABELS = [
     'Atelectasis', 'Consolidation', 'Infiltration',
@@ -46,7 +55,21 @@ LABELS = [
 LABEL_TO_IDX = {label: idx for idx, label in enumerate(LABELS)}
 
 MODEL_NAME = 'ConvNeXt_Focal'
-TEMPERATURE = 0.5472  # fitted on validation set — see calibration_analysis.py output
+
+# ─────────────────────────────────────────────────────────────────────
+# CALIBRATION METHOD SWITCH — change this one line to switch, then
+# re-run `python triage_logic.py` once to refit thresholds. Old method's
+# thresholds file is untouched, so switching back is equally a one-line change.
+# Options: 'global_temperature'  (default, production-tested)
+#          'per_class_isotonic'  (better calibrated, newer, opt-in)
+# ─────────────────────────────────────────────────────────────────────
+CALIBRATION_METHOD = 'per_class_isotonic' #'global_temperature'
+
+GLOBAL_TEMPERATURE = 0.5472  # fitted on validation set — see calibration_analysis.py output
+THRESHOLDS_PATH = os.path.join(CACHE_DIR, f"per_class_thresholds_{CALIBRATION_METHOD}.json")
+ISOTONIC_CALIBRATORS_PATH = os.path.join(CACHE_DIR, "isotonic_calibrators.pkl")
+
+_isotonic_calibrators = None  # loaded lazily, cached in memory after first use
 
 # ─────────────────────────────────────────────────────────────────────
 # DRAFT clinical urgency tiers — REQUIRES RADIOLOGIST VALIDATION.
@@ -54,7 +77,7 @@ TEMPERATURE = 0.5472  # fitted on validation set — see calibration_analysis.py
 # progressive findings = "critical"; findings needing prompt follow-up
 # but not immediately life-threatening = "urgent"; findings that are
 # often chronic, incidental, or slow-progressing = "routine".
-# CHANGE THIS based on what your 5 radiologists say in the pilot study —
+# CHANGE THIS based on what your radiologists say in the pilot study —
 # this is exactly the kind of judgment call that needs their input.
 # ─────────────────────────────────────────────────────────────────────
 CLINICAL_URGENCY = {
@@ -81,9 +104,75 @@ def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-x))
 
 
-def apply_calibration(logits, temperature=TEMPERATURE):
-    """Converts raw model logits to calibrated probabilities."""
-    return sigmoid(logits / temperature)
+def fit_isotonic_calibrators(model_name=MODEL_NAME, save=True):
+    """
+    Fits one IsotonicRegression per class on validation data — maps raw
+    sigmoid(logit) -> calibrated probability via a non-parametric monotonic
+    curve. Reuses the same .npz cache as calibration_analysis.py, no GPU needed.
+    """
+    cache_path = os.path.join(CACHE_DIR, f"{model_name}_logits_cache.npz")
+    if not os.path.exists(cache_path):
+        raise FileNotFoundError(f"No cache found at {cache_path}. Run calibration_analysis.py first.")
+
+    data = np.load(cache_path)
+    val_logits, val_labels = data['val_logits'], data['val_labels']
+    val_probs = sigmoid(val_logits)
+
+    calibrators = []
+    for i in range(len(LABELS)):
+        iso = IsotonicRegression(out_of_bounds='clip', y_min=0.0, y_max=1.0)
+        iso.fit(val_probs[:, i], val_labels[:, i])
+        calibrators.append(iso)
+
+    if save:
+        with open(ISOTONIC_CALIBRATORS_PATH, 'wb') as f:
+            pickle.dump(calibrators, f)
+        print(f"Saved isotonic calibrators to: {ISOTONIC_CALIBRATORS_PATH}")
+
+    return calibrators
+
+
+def load_isotonic_calibrators():
+    global _isotonic_calibrators
+    if _isotonic_calibrators is not None:
+        return _isotonic_calibrators  # already loaded this session
+
+    if not os.path.exists(ISOTONIC_CALIBRATORS_PATH):
+        print("No saved isotonic calibrators found — fitting now...")
+        _isotonic_calibrators = fit_isotonic_calibrators()
+    else:
+        with open(ISOTONIC_CALIBRATORS_PATH, 'rb') as f:
+            _isotonic_calibrators = pickle.load(f)
+    return _isotonic_calibrators
+
+
+def apply_calibration(logits, method=None):
+    """
+    Converts raw model logits to calibrated probabilities, using whichever
+    method CALIBRATION_METHOD is currently set to (or an explicit override).
+    This is the ONLY place that needs to know about the method — everything
+    else (thresholds, triage_case) just calls this and gets back calibrated
+    probabilities, regardless of which method is active.
+    """
+    method = method or CALIBRATION_METHOD
+    logits = np.array(logits)
+
+    if method == 'global_temperature':
+        return sigmoid(logits / GLOBAL_TEMPERATURE)
+
+    elif method == 'per_class_isotonic':
+        calibrators = load_isotonic_calibrators()
+        raw_probs = sigmoid(logits)
+        if raw_probs.ndim == 1:
+            return np.array([calibrators[i].predict([raw_probs[i]])[0] for i in range(len(LABELS))])
+        else:  # batch of predictions
+            calibrated = np.zeros_like(raw_probs)
+            for i in range(len(LABELS)):
+                calibrated[:, i] = calibrators[i].predict(raw_probs[:, i])
+            return calibrated
+
+    else:
+        raise ValueError(f"Unknown CALIBRATION_METHOD: {method}")
 
 
 def fit_per_class_thresholds(model_name=MODEL_NAME, save=True):
@@ -214,6 +303,9 @@ def evaluate_triage_on_test_set(model_name=MODEL_NAME):
 
 
 if __name__ == '__main__':
+    print(f"Active calibration method: {CALIBRATION_METHOD}")
+    print(f"Thresholds will be saved to: {THRESHOLDS_PATH}\n")
+
     print("Fitting per-class thresholds on validation set...")
     fit_per_class_thresholds()
 
@@ -221,5 +313,7 @@ if __name__ == '__main__':
     evaluate_triage_on_test_set()
 
     print("\nDone. Import `triage_case()` from this module in your FastAPI backend.")
+    print(f"REMINDER: to switch calibration method, change CALIBRATION_METHOD at the top")
+    print(f"of this file and re-run this script once to refit thresholds for that method.")
     print("REMINDER: CLINICAL_URGENCY dict is a draft — get it reviewed by your")
     print("radiologist panel before this goes beyond internal development/demo use.")
