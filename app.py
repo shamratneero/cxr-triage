@@ -40,7 +40,7 @@ from src.inference.gradcam import GradCAM
 
 from triage_logic import (
     triage_case, load_thresholds, apply_calibration,
-    LABELS, LABEL_TO_IDX, TEMPERATURE
+    LABELS, LABEL_TO_IDX, GLOBAL_TEMPERATURE, CALIBRATION_METHOD
 )
 
 # ─── Config — must match training/eval exactly ──────────────────────────
@@ -83,8 +83,13 @@ def load_everything():
     print("Model, transforms, GradCAM, and thresholds loaded. API ready.")
 
 
-def generate_heatmap_b64(img_tensor, class_idx, original_pil_image):
-    """Runs GradCAM for one class, overlays on the original image, returns base64 PNG."""
+def generate_heatmap_b64(img_tensor, class_idx, original_pil_image, label, confidence):
+    """
+    Runs GradCAM for one class, overlays the heatmap, draws a bounding box
+    around the hottest region, and labels the finding name + confidence
+    directly on the image — so it's readable on its own, not just a color
+    wash that only makes sense next to separate text.
+    """
     heatmap = _gradcam.generate(img_tensor.clone(), class_idx=class_idx)
 
     display_size = 320
@@ -99,6 +104,31 @@ def generate_heatmap_b64(img_tensor, class_idx, original_pil_image):
     colored = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
     colored = cv2.cvtColor(colored, cv2.COLOR_BGR2RGB)
     overlay = cv2.addWeighted(orig_np, 0.6, colored, 0.4, 0)
+    overlay = np.ascontiguousarray(overlay)
+
+    # --- Draw a bounding box around the hottest region (top 20% activation) ---
+    thresh_val = np.percentile(heatmap_norm, 80)
+    binary_mask = np.uint8(heatmap_norm >= thresh_val) * 255
+    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if contours:
+        # Use the largest contour — the single most concentrated hot region
+        largest = max(contours, key=cv2.contourArea)
+        x, y, w, h = cv2.boundingRect(largest)
+        # Only draw if the box is a meaningful size (skip tiny noise specks)
+        if w * h > (display_size * display_size) * 0.01:
+            cv2.rectangle(overlay, (x, y), (x + w, y + h), (255, 255, 0), 2)
+
+    # --- Label: finding name + confidence, drawn directly on the image ---
+    label_text = f"{label}: {confidence*100:.0f}%"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.6
+    thickness = 2
+    (text_w, text_h), baseline = cv2.getTextSize(label_text, font, font_scale, thickness)
+
+    # Background bar behind the text for readability regardless of image content
+    cv2.rectangle(overlay, (0, 0), (text_w + 16, text_h + baseline + 14), (0, 0, 0), -1)
+    cv2.putText(overlay, label_text, (8, text_h + 8), font, font_scale, (255, 255, 0), thickness)
 
     overlay_img = Image.fromarray(overlay)
     buf = io.BytesIO()
@@ -140,9 +170,11 @@ async def predict(file: UploadFile = File(...), include_heatmaps: bool = True):
     # Generate heatmaps only for flagged findings (keeps response time reasonable)
     heatmaps = {}
     if include_heatmaps and result['all_flagged_findings']:
+        detail_by_label = {f['label']: f for f in result['per_finding_detail']}
         for label in result['all_flagged_findings']:
             class_idx = LABEL_TO_IDX[label]
-            heatmaps[label] = generate_heatmap_b64(img_tensor, class_idx, img)
+            confidence = detail_by_label[label]['calibrated_confidence']
+            heatmaps[label] = generate_heatmap_b64(img_tensor, class_idx, img, label, confidence)
 
     return JSONResponse({
         "case_tier": result['case_tier'],
@@ -152,7 +184,8 @@ async def predict(file: UploadFile = File(...), include_heatmaps: bool = True):
         "heatmaps_base64": heatmaps,  # {finding_label: base64 PNG string}
         "model_info": {
             "model": "ConvNeXt-Tiny (Focal loss)",
-            "temperature": TEMPERATURE,
+            "calibration_method": CALIBRATION_METHOD,
+            "temperature": GLOBAL_TEMPERATURE if CALIBRATION_METHOD == 'global_temperature' else None,
             "image_size": IMAGE_SIZE,
         }
     })
